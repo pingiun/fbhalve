@@ -1,0 +1,18 @@
+.TH FBHALVE 1
+.SH NAME
+fbhalve \- halve unicode art that uses FULL BLOCK characters
+.SH SYNPOSIS
+.B fbhalve
+[\fIfile\fR]
+.SH DESCRIPTION
+.B fbhalve
+converts unicode art files that use \fIU+2588 FULL BLOCK\fR characters to an
+image that is halve the size of the original, by using smaller unicode block
+characters such as \fIU+2580 UPPER HALF BLOCK\fR
+.PP
+The input file should be correctly formatted. The file should only contain the
+unicode \fIU+2588 FULL BLOCK\fR and \fIU+2588 NO-BREAK SPACE\fR characters.
+The file should be in the UTF-8 encoding. It should only use \fIU+000A LINE
+FEED line breaks\fR.
+.SH AUTHOR
+Jelle Besseling (jelle@pingiun.com)
