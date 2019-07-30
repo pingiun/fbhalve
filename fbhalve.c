@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <libgen.h>
 #include <string.h>
 
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
@@ -26,6 +27,8 @@
 
 #define FULL_BLOCK "\xE2\x96\x88"
 #define NBSP "\xC2\xA0"
+
+char* PROGNAME = "fbhalve";
 
 /*
  * Lookup table for the smaller characters. An index is built up by using the
@@ -76,7 +79,7 @@ is_full(char *in, int *i, ssize_t length)
 		*i += STRSIZEOF(NBSP);
 		return 0;
 	} else {
-		fprintf(stderr, "%s: invalid character\n", getprogname());
+		fprintf(stderr, "%s: invalid character\n", PROGNAME);
 		exit(EXIT_FAILURE);
 	}
 }
@@ -116,14 +119,14 @@ main(int argc, char *argv[])
 	line1 = line2 = NULL;
 	linecap = 0;
 
-	setprogname(argv[0]);
+	PROGNAME = basename(argv[0]);
 
 	if (argc > 2) {
-		fprintf(stderr, "USAGE:\t%s [inputfile]\n", getprogname());
+		fprintf(stderr, "USAGE:\t%s [inputfile]\n", PROGNAME);
 		fprintf(
 			stderr,
 			"\tWithout inputfile or with '-', %s will read from standard input\n",
-			getprogname()
+			PROGNAME
 		);
 		return EXIT_FAILURE;
 	}
@@ -133,7 +136,7 @@ main(int argc, char *argv[])
 	} else {
 		input = fopen(argv[1], "r");
 		if (input == NULL) {
-			perror(getprogname());
+			perror(PROGNAME);
 			return EXIT_FAILURE;
 		}
 	}
