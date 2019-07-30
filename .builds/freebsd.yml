@@ -1,0 +1,7 @@
+image: freebsd/current
+sources:
+- https://git.sr.ht/~pingiun/fbhalve             
+tasks:
+- build: |
+    cd fbhalve
+    make
