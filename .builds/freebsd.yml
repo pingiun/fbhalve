@@ -1,4 +1,4 @@
-image: freebsd/current
+image: freebsd/latest
 sources:
 - https://git.sr.ht/~pingiun/fbhalve             
 tasks:
