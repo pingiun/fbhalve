@@ -21,22 +21,24 @@
 #include <stdlib.h>
 #include <libgen.h>
 #include <string.h>
+#include <assert.h>
 
-#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 #define STRSIZEOF(s) (sizeof(s) - 1)
 
 #define FULL_BLOCK "\xE2\x96\x88"
 #define NBSP "\xC2\xA0"
+#define ERR_UNALIGNED -1
+#define ERR_INVALCHAR -2
 
-char* PROGNAME = "fbhalve";
+char* PROGNAME;
 
 /*
  * Lookup table for the smaller characters. An index is built up by using the
  * lowest 4 bits in the following way:
- * 8		4		2		1
- * Low-right	Up-right	Low-left	Up-left
+ * 8            4           2           1
+ * Low-right    Up-right    Low-left    Up-left
 */
-static char* halveblocks[16] = {
+static const char *halveblocks[16] = {
 	NBSP,
 	"\xE2\x96\x98",	/* Quadrant Upper Left */
 	"\xE2\x96\x96",	/* Quadrant Lower Left */
@@ -55,52 +57,80 @@ static char* halveblocks[16] = {
 	FULL_BLOCK	/* full block */
 };
 
-int
-is_nbsp(char* in)
+static int
+is_nbsp(char *in, char *end)
 {
+	if (in + STRSIZEOF(NBSP) > end)
+		return -1;
 	return in[0] == NBSP[0] && \
 	       in[1] == NBSP[1];
 }
 
-int
-is_full(char *in, int *i, ssize_t length)
+static int
+is_full(char *in, char *end)
 {
-	if (*i + STRSIZEOF(FULL_BLOCK) > (unsigned long) length) {
-		return 0;
-	}
-	if (
-		in[0] == FULL_BLOCK[0] && \
-		in[1] == FULL_BLOCK[1] && \
-		in[2] == FULL_BLOCK[2]
-	) {
-		*i += STRSIZEOF(FULL_BLOCK);
-		return 1;
-	} else if (is_nbsp(in)) {
-		*i += STRSIZEOF(NBSP);
-		return 0;
-	} else {
-		fprintf(stderr, "%s: invalid character\n", PROGNAME);
-		exit(EXIT_FAILURE);
-	}
+	if (in + STRSIZEOF(FULL_BLOCK) > end)
+		return -1;
+	return in[0] == FULL_BLOCK[0] && \
+	       in[1] == FULL_BLOCK[1] && \
+	       in[2] == FULL_BLOCK[2];
 }
 
-void
-process_lines(char *line1, char *line2, ssize_t line1_len, ssize_t line2_len)
+static void
+set_bit(size_t *ch_index, int bit)
 {
-	int upper_i, lower_i, ch_index;
-	upper_i = lower_i = 0;
-	for(;;) {
-		if (line1[upper_i] == '\n' || line1[upper_i] == '\0')
-			break;
+	*ch_index |= 1 << bit;
+}
 
-		ch_index = 0;
-		ch_index = is_full(&line1[upper_i], &upper_i, line1_len) \
-			| is_full(&line2[lower_i], &lower_i, line2_len) << 1;
-		ch_index |= is_full(&line1[upper_i], &upper_i, line1_len) << 2 \
-			| is_full(&line2[lower_i], &lower_i, line2_len) << 3;
+static size_t
+check_char(char *line, char *end, size_t *ch_index, int bit, int *err) {
+	if (*err != 0)
+		return 0;
+	int ret;
+	ret = is_full(line, end);
+	if (ret < 0) {
+		*err = ERR_UNALIGNED;
+		return 0;
+	}
+	if (ret) {
+		set_bit(ch_index, bit);
+		return STRSIZEOF(FULL_BLOCK);
+	}
+	ret = is_nbsp(line, end);
+	if (ret < 0) {
+		*err = ERR_UNALIGNED;
+		return 0;
+	}
+	if (ret)
+		return STRSIZEOF(NBSP);
+	*err = ERR_INVALCHAR;
+	return 0;
+}
+
+static int
+process_lines(char *upper, char *lower, size_t upper_len, size_t lower_len)
+{
+	size_t ch_index;
+	char *upper_end, *lower_end;
+	int err;
+
+	upper_end = upper + upper_len;
+	lower_end = lower + lower_len;
+
+	while(!(upper[0] == '\n' || upper[0] == '\0')) {
+		ch_index = err = 0;
+		upper += check_char(upper, upper_end, &ch_index, 0, &err);
+		upper += check_char(upper, upper_end, &ch_index, 2, &err);
+		if (!(lower[0] == '\n' || lower[0] == '\0')) {
+			lower += check_char(lower, lower_end, &ch_index, 1, &err);
+			lower += check_char(lower, lower_end, &ch_index, 3, &err);
+		}
+		if (err != 0)
+			return err;
 		printf("%s", halveblocks[ch_index]);
 	}
 	printf("\n");
+	return 0;
 }
 
 /*
@@ -114,6 +144,7 @@ main(int argc, char *argv[])
 	FILE* input;
 	ssize_t line1_len, line2_len;
 	size_t linecap;
+	int ret;
 	char *line1, *line2;
 
 	line1 = line2 = NULL;
@@ -131,7 +162,7 @@ main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	if (argc == 1 || strncmp(argv[1], "-", 1) == 0) {
+	if (argc == 1 || strncmp(argv[1], "-", 2) == 0) {
 		input = stdin;
 	} else {
 		input = fopen(argv[1], "r");
@@ -142,15 +173,44 @@ main(int argc, char *argv[])
 	}
 
 	for (;;) {
-		if ((line1_len = getline(&line1, &linecap, input)) < 0)
+		if ((line1_len = getline(&line1, &linecap, input)) == EOF)
 			break;
-		/*
-		 * Ignore errors in the second line because is_full handles
-		 * them silently.
-		 */
-		line2_len = getline(&line2, &linecap, input);
+		if (line1_len == -1) {
+			perror(PROGNAME);
+			return EXIT_FAILURE;
+		}
 
-		process_lines(line1, line2, line1_len, line2_len);
+		if ((line2_len = getline(&line2, &linecap, input)) == EOF)
+			line1_len = 0;
+		if (line2_len == -1) {
+			perror(PROGNAME);
+			return EXIT_FAILURE;
+		}
+
+		ret = process_lines(line1, line2,
+		                    (size_t) line1_len, (size_t) line2_len);
+		switch (ret) {
+		case ERR_INVALCHAR:
+			fprintf(
+				stderr,
+				"%s: Invalid character in input file\n",
+				PROGNAME
+			);
+			return EXIT_FAILURE;
+		case (ERR_UNALIGNED):
+			fprintf(
+				stderr,
+				"%s: Unaligned input file\n",
+				PROGNAME
+			);
+			return EXIT_FAILURE;
+		case 0:
+			/* Success */
+			break;
+		default:
+			/* Unreachable */
+			assert(0);
+		}
 	}
-	return (0);
+	return EXIT_SUCCESS;
 }
